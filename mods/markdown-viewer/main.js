@@ -245,7 +245,7 @@ class Viewer {
     const content = this.error ? div().p(20).text_color(t.ansi1).child(this.error)
       : this.text === null ? div().p(20).text_color(t.dim).child("Loading…")
       : this.source
-        ? div().flex_1().min_h(0).p(6).child(Editor.new(this.editor ?? (this.editor = this.makeEditor(this.text))).size_full())
+        ? div().flex_1().min_h(0).p(6).when(Boolean(this.editor), (e) => e.child(Editor.new(this.editor).size_full()))
         : div().id("md-scroll").flex_1().min_h(0).overflow_y_scrollbar()
             .child(h_flex().w_full().justify_center()
               .child(v_flex().flex_1().min_w(0).max_w(860).overflow_hidden().px(28).py(24).text_size(14)
@@ -260,6 +260,8 @@ class Viewer {
         .child(div().flex_1().min_w(0).truncate().text_size(11).text_color(t.dim).child((this.on ? `${this.on}:` : "") + pretty(dir(this.file))))
         .child(button("md-mode", this.source ? "eye" : "code", this.source ? "Preview" : "Source", false, (_e, cx) => {
           this.source = !this.source;
+          // Editor state can't be created while drawing, so it's made here (or in set(), on load).
+          if (this.source && !this.editor && this.text !== null) this.editor = this.makeEditor(this.text);
           try { localStorage.setItem("source", this.source ? "1" : "0"); } catch {}
           cx.notify();
         }))

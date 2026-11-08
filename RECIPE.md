@@ -47,6 +47,7 @@ When a coding agent mentions a Markdown file, cmd-click the path in the conversa
 - Herdr draws images only from real folders, so `svg("mods/...")` comes up blank when the mod's folder is a link to a git clone. `icons.js` writes the icons to `data/markdown-viewer/icons` and draws them from there.
 - `<mod>.<command>` reaches only shown copies, which is why `open.sh` needs the acknowledgement.
 - `window()` can be null, including during `herdr-app check`, so guard it in `render`.
+- `EditorState.new` can't run during `render`, and `herdr-app check` won't catch it unless that path draws at load. Create it in the click handler or when the text loads.
 - The running Herdr app on macOS may report no bundle id, so `open.sh` matches its path or the name `herdr-app`.
 - Claude Code exposes only its visible screen to `hc read`, and its condensed transcript can drop paths.
 - With the router as the default, plain `open file` comes straight back to Herdr. Open elsewhere has to name the saved app.
