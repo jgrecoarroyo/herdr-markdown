@@ -8,7 +8,7 @@ rendered, right beside the conversation. No switching to another app or hunting 
 ## What you get
 
 - **Click a path (macOS):** cmd-click a `.md` path in the conversation to open it in a split on the right, or in the viewer already showing. Outside Herdr, `.md` files keep opening in your usual app.
-- **Viewer:** rendered Markdown with images, reloading as the agent edits the file, with a Source/Preview switch. Links to other `.md` files open in place, with Back. Web links open in your browser.
+- **Viewer:** rendered Markdown with images and highlighted code blocks with a copy button, reloading as the agent edits the file, with a Source/Preview switch. Links to other `.md` files open in place, with Back. Web links open in your browser.
 - **Picker:** a key lists the `.md` paths on the focused terminal's screen, newest first. Enter opens a tab, cmd-Enter (ctrl-Enter on Linux) opens a split. Type to filter, or type a path.
 - **Other machines:** the picker and viewer work with terminals on your other Herdr machines too.
 
@@ -48,6 +48,7 @@ In `~/.config/herdr-app/keys.json`, inside `"global"`. Use one of these, or any 
 
 - **Platforms:** tested on macOS. On Linux, clicking a path isn't supported yet, so use the picker; it should work but hasn't been tested. Windows isn't supported.
 - **Images:** local images show by themselves, as PNG, JPEG, GIF, WebP or SVG up to 20 MB. Web images wait for a click, so opening a file never contacts a server it mentions. Images in files on other machines aren't shown.
+- **Code highlighting:** JavaScript, Python, Java, C, C++, C#, Go, Rust, Ruby, PHP, Bash, SQL, YAML, JSON, HTML, CSS and Markdown. TypeScript uses JavaScript's colors. Other languages, such as Swift and TOML, show as plain text with their label. A code block can scroll a little past its last line, because each one is a small editor and Herdr has no setting to turn that off.
 - **Links:** a link to a non-Markdown file only shows it in its folder and never opens it, because it could point at something that runs.
 - **Picker reach:** it reads what the terminal can show. Claude Code exposes only its visible screen, so older paths may not be listed.
 

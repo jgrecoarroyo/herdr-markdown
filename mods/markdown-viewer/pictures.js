@@ -29,9 +29,31 @@ function locate(src, file) {
   return { web: false, src: "/" + parts.join("/") };
 }
 
-// The Markdown as text runs and groups of images. Images with only space between them (a row of
-// badges) stay together in one group.
+// The Markdown as text runs, groups of images and code blocks. A code block starts at the line's
+// beginning: one indented inside a list stays in its text run, so the list isn't cut in two.
+const FENCE = /^(`{3,}|~{3,})[ \t]*([^\n`]*)$/;
+
 export function blocks(markdown, file) {
+  const lines = markdown.replace(/\r\n/g, "\n").split("\n"), out = [];
+  let plain = [], i = 0;
+  const flush = () => { if (plain.length) out.push(...imagesIn(plain.join("\n"), file)); plain = []; };
+  while (i < lines.length) {
+    const open = FENCE.exec(lines[i]);
+    if (!open) { plain.push(lines[i++]); continue; }
+    const closing = new RegExp(`^${open[1][0]}{${open[1].length},}\\s*$`);
+    let end = i + 1;
+    while (end < lines.length && !closing.test(lines[end])) end++;
+    flush();
+    out.push({ code: { language: open[2].trim().split(/\s+/)[0] ?? "", text: lines.slice(i + 1, end).join("\n") } });
+    i = end + 1;
+  }
+  flush();
+  return out;
+}
+
+// Text runs and groups of images. Images with only space between them (a row of badges) stay
+// together in one group.
+function imagesIn(markdown, file) {
   const out = [];
   let last = 0, m;
   IMAGE.lastIndex = 0;

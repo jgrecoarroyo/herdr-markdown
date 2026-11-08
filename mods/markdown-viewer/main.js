@@ -22,6 +22,16 @@ const base = (p) => p.slice(p.lastIndexOf("/") + 1);
 const dir = (p) => p.slice(0, p.lastIndexOf("/")) || "/";
 const pretty = (p) => { const h = home(); return p === h || p.startsWith(h + "/") ? "~" + p.slice(h.length) : p; };
 
+// Names people write after ``` that the code editor knows by another name. It has no TypeScript or
+// JSX of its own, and its JavaScript still colors their keywords, strings and comments.
+const LANGUAGES = {
+  js: "javascript", jsx: "javascript", mjs: "javascript", ts: "javascript", tsx: "javascript", typescript: "javascript",
+  py: "python", rb: "ruby", rs: "rust", golang: "go", sh: "bash", shell: "bash", zsh: "bash",
+  console: "bash", yml: "yaml", md: "markdown", "c++": "cpp", csharp: "cs", "c#": "cs", htm: "html",
+};
+const CODE_LINE = 21; // px per line at 13 px in the code editor
+const CODE_PADDING = 24;
+
 const openLink = (url) => exec(mac() ? "open" : "xdg-open", [url]).catch(() => null);
 const reveal = (path) => exec(mac() ? "open" : "xdg-open", mac() ? ["-R", path] : [dir(path)]).catch(() => null);
 
@@ -172,6 +182,7 @@ class Viewer {
   load(cx) {
     const gen = ++this.gen, file = this.file;
     this.text = null; this.error = null; this.editor?.release(); this.editor = null;
+    this.parts.forEach((p) => p.code?.editor?.release()); this.parts = [];
     cx.spawn(async (cx) => {
       try {
         const text = await readTextFile(file, { on: this.on });
@@ -186,10 +197,55 @@ class Viewer {
 
   set(text, cx) {
     this.text = text;
+    const before = this.parts;
     this.parts = blocks(body(text), this.file);
+    this.keepOrMakeCode(before);
     this.checkPictures(cx);
     if (this.editor) this.editor.set_value(text);
     else if (this.source) this.editor = this.makeEditor(text);
+  }
+
+  // One read-only code editor per block, made here because that can't happen while drawing. A block
+  // that didn't change keeps its editor, so reloading doesn't lose a selection.
+  keepOrMakeCode(before) {
+    const spare = new Map();
+    for (const { code } of before) if (code?.editor) spare.set(`${code.language}\n${code.text}`, code.editor);
+    for (const { code } of this.parts) {
+      if (!code) continue;
+      const key = `${code.language}\n${code.text}`;
+      code.editor = spare.get(key) ?? this.makeCode(code);
+      spare.delete(key);
+    }
+    for (const editor of spare.values()) editor.release();
+  }
+
+  makeCode({ language, text }) {
+    const t = theme(), name = language.toLowerCase();
+    return EditorState.new({ language: LANGUAGES[name] ?? name, value: text, readonly: true, soft_wrap: false, folding: false,
+      line_numbers: false, font_family: settings().font_family, font_size: 13,
+      syntax: { keyword: t.ansi5, string: t.ansi2, comment: t.dim, function: t.ansi4, type: t.ansi3, number: t.ansi1, constant: t.ansi6, boolean: t.ansi1, operator: t.muted, punctuation: t.muted } });
+  }
+
+  copy(code, cx) {
+    cx.write_to_clipboard(code.text);
+    this.copied = code;
+    cx.notify();
+    cx.timer.after(1500, (cx) => { if (this.copied === code) { this.copied = null; cx.notify(); } });
+  }
+
+  // A soft block with its language and a copy button in the corner.
+  codeBlock(key, code, t) {
+    const height = code.text.split("\n").length * CODE_LINE + CODE_PADDING, copied = this.copied === code;
+    return div().id(key).relative().w_full().h(height).flex_none().rounded(10).bg(t.raised).overflow_hidden()
+      .child(div().size_full().px(14).py(12).child(Editor.new(code.editor).size_full()))
+      .child(h_flex().absolute().top(7).right(7).gap(4).items_center()
+        .when(Boolean(code.language), (e) => e.child(div().h(22).px(8).flex().items_center().rounded(6).bg(t.background).text_size(11).text_color(t.muted).child(code.language)))
+        .child(h_flex().id(`${key}-copy`).h(22).px(6).gap(4).items_center().rounded(6).bg(t.background).cursor_pointer().text_size(11)
+          .text_color(copied ? t.foreground : t.muted).hover((s) => s.bg(t.hover).text_color(t.foreground))
+          .on_mouse_down("left", (_e, cx) => cx.stop_propagation())
+          .on_click((_e, cx) => this.copy(code, cx))
+          .child(drawIcon(copied ? "check" : "copy").size(13).flex_none())
+          .when(copied, (e) => e.child("Copied"))));
   }
 
   // Local images load by themselves, and are checked again in case they changed. A file on another
@@ -307,7 +363,9 @@ class Viewer {
             .child(h_flex().w_full().justify_center()
               .child(v_flex().flex_1().min_w(0).max_w(860).overflow_hidden().px(28).py(24).text_size(14)
                 .child(this.parts.length
-                  ? v_flex().w_full().gap(12).children(this.parts.map((part, n) => part.images
+                  ? v_flex().w_full().gap(12).children(this.parts.map((part, n) => part.code
+                    ? this.codeBlock(`md-code-${this.gen}-${n}`, part.code, t)
+                    : part.images
                     ? h_flex().w_full().flex_wrap().gap(8).items_center().children(part.images.map((item, i) => this.picture(`md-image-${this.gen}-${n}-${i}`, item, t)))
                     : TextView.markdown(`md-${this.gen}-${n}`, part.text).selectable(true).on_link_click((url, cx) => this.link(url, cx))))
                   : div().text_color(t.dim).child("This file is empty."))));
