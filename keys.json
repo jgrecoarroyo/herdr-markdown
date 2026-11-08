@@ -1,0 +1,6 @@
+{
+  "global": {
+    "cmd-shift-o": "mod.open:markdown-viewer",
+    "ctrl-shift-m": "mod.open:markdown-viewer"
+  }
+}

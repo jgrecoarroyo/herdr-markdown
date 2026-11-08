@@ -1,0 +1,270 @@
+// Markdown: open the .md files an agent just printed, rendered, inside Herdr.
+//
+// Two roles, one mod:
+// - Opened as its overlay (cmd-shift-o → mod.open:markdown): a picker of the Markdown
+//   files mentioned in the focused terminal's recent output, newest first. One match
+//   opens straight away. Enter opens it in a new tab, cmd-Enter in a split beside the
+//   terminal; type to filter, or type/paste a path.
+// - As a pane (props: { file, on }): the file rendered, reloaded when it changes, with
+//   Source/Preview, links to other .md files followed in place (Back), web links in the
+//   browser.
+import { View, div, svg } from "gpui-kit";
+import { v_flex, h_flex, InputState, Input, Editor, EditorState, TextView } from "gpui-base";
+import { focused, panes, hc, exec, run, theme, settings, props, closeOverlay, home, appHome, readTextFile, watchFolder, nextCommand, window } from "herdr";
+import * as fs from "fs/promises";
+import { mentions, existing } from "./paths.js";
+
+const ICON = (name) => `mods/markdown-viewer/${name}.svg`;
+const DATA = () => `${appHome()}/data/markdown-viewer`;
+const mac = () => window()?.platform === "macos";
+const base = (p) => p.slice(p.lastIndexOf("/") + 1);
+const dir = (p) => p.slice(0, p.lastIndexOf("/")) || "/";
+const pretty = (p) => { const h = home(); return p === h || p.startsWith(h + "/") ? "~" + p.slice(h.length) : p; };
+
+const openLink = (url) => exec(mac() ? "open" : "xdg-open", [url]).catch(() => null);
+const reveal = (path) => exec(mac() ? "open" : "xdg-open", mac() ? ["-R", path] : [dir(path)]).catch(() => null);
+
+// Opens a file outside Herdr. With the Markdown Router as macOS's default app for .md (router/), the
+// default would send it straight back here, so this uses the app the router took over from.
+async function openElsewhere(file) {
+  if (!mac()) return exec("xdg-open", [file]).catch(() => null);
+  const id = (await readTextFile(`${DATA()}/fallback`).catch(() => null))?.trim() ?? "";
+  return exec("open", /^[\w.-]+$/.test(id) ? ["-b", id, file] : [file]).catch(() => null);
+}
+
+export default class Markdown extends View {
+  init(_props, cx) {
+    const p = props() ?? {};
+    if (p.file) this.viewer = new Viewer(p.file, p.on ?? null, cx);
+    else this.picker = new Picker(p.overlay, cx);
+  }
+  render(cx) { return (this.viewer ?? this.picker).render(cx); }
+}
+
+// Opens a file: a new tab named after it, or a split beside the pane that had focus.
+function open(file, on, split, pane) {
+  const p = { file, ...(on ? { on } : {}) };
+  if (split && pane) run("pane.split", { direction: "right", pane, mod: "markdown-viewer", props: p });
+  else run("tab.new", { mod: "markdown-viewer", props: p, name: base(file) });
+}
+
+class Picker {
+  constructor(overlay, cx) {
+    const f = focused();
+    this.overlay = overlay; this.pane = f?.pane ?? null;
+    this.terminal = f?.terminal ?? null;
+    // Relative paths are from the pane's folder (where the agent works), as Changes finds it.
+    this.cwd = (f?.pane && panes().find((p) => p.pane === f.pane)?.cwd) || f?.cwd || null;
+    this.on = this.terminal?.includes("/") ? this.terminal.split("/")[0] : null;
+    this.files = null; this.at = 0; this.filter = "";
+    this.input = InputState.new({ placeholder: "Filter, or type a path…" });
+    this.input.on("change", (_e, cx) => { this.filter = this.input.value(); this.at = 0; cx.notify(); });
+    this.input.on("submit", (e, cx) => this.choose(this.shown()[this.at], Boolean(e?.secondary), cx));
+    this.input.focus();
+    cx.spawn(async (cx) => {
+      try {
+        if (!this.terminal) throw new Error("No terminal has focus");
+        const r = await hc(["read", this.terminal, "--json", "--lines", "400"]);
+        if (r.code !== 0) throw new Error((r.stderr || "Cannot read the terminal").trim());
+        this.files = await existing(mentions(JSON.parse(r.stdout).text ?? ""), this.cwd, this.on);
+        // One file mentioned: no need to choose.
+        if (this.files.length === 1) return this.choose(this.files[0], false, cx);
+      } catch (e) { this.error = String(e?.message ?? e); this.files = []; }
+      cx.notify();
+    });
+  }
+
+  shown() {
+    const q = this.filter.trim().toLowerCase();
+    return (this.files ?? []).filter((f) => !q || pretty(f).toLowerCase().includes(q));
+  }
+
+  choose(file, split, cx) {
+    const typed = this.filter.trim();
+    if (!file && typed) {
+      // Nothing listed matches: try what was typed as a path.
+      cx.spawn(async (cx) => {
+        const [found] = await existing([typed], this.cwd, this.on).catch(() => []);
+        if (found) { open(found, this.on, split, this.pane); closeOverlay(this.overlay); }
+        else { this.error = `No file at ${typed}`; cx.notify(); }
+      });
+      return;
+    }
+    if (!file) return;
+    open(file, this.on, split, this.pane);
+    closeOverlay(this.overlay);
+  }
+
+  render(cx) {
+    const t = theme(), list = this.shown();
+    if (this.at >= list.length) this.at = Math.max(0, list.length - 1);
+    const row = (f, i) => h_flex().id(`md-${i}`).h(44).px(12).gap(10).flex_none().items_center().rounded(7).cursor_pointer()
+      .bg(i === this.at ? t.selected : t.popover).hover((s) => s.bg(i === this.at ? t.selected : t.hover))
+      .on_click((e, cx) => this.choose(f, Boolean(e?.modifiers?.platform || e?.modifiers?.control), cx))
+      .child(svg(ICON("file")).size(16).flex_none().text_color(t.muted))
+      .child(v_flex().flex_1().min_w(0)
+        .child(div().text_size(13).font_semibold().truncate().child(base(f)))
+        .child(div().text_size(11).text_color(t.dim).truncate().child(pretty(dir(f)))))
+      .child(div().id(`md-split-${i}`).size(26).flex_none().flex().items_center().justify_center().rounded(6).text_color(t.dim)
+        .hover((s) => s.bg(t.raised).text_color(t.foreground))
+        .on_click((_e, cx) => { cx.stop_propagation(); this.choose(f, true, cx); })
+        .child(svg(ICON("split")).size(14)));
+    const note = this.error ?? (this.files === null ? "Reading the terminal…"
+      : !this.files.length ? "No Markdown files in this terminal's recent output. Type a path."
+      : !list.length ? "No match. Enter tries it as a path." : null);
+    return v_flex().id("md-picker").size_full().bg(t.popover).text_color(t.foreground).text_size(13)
+      .on_key_down((e, cx) => {
+        const n = list.length;
+        if (e.key === "escape") { closeOverlay(this.overlay); return; }
+        if (e.key === "down" && n) this.at = (this.at + 1) % n;
+        else if (e.key === "up" && n) this.at = (this.at + n - 1) % n;
+        else return;
+        cx.stop_propagation(); cx.notify();
+      })
+      .child(h_flex().h(46).flex_none().px(14).gap(10).items_center().border_b(1).border_color(t.border)
+        .child(svg(ICON("file")).size(16).text_color(t.accent))
+        .child(div().flex_1().min_w(0).h_full().flex().items_center().child(Input.new(this.input).w_full().text_size(14).text_color(t.foreground))))
+      .child(v_flex().id("md-list").h(330).flex_none().overflow_y_scrollbar().p(6).gap(1)
+        .children(list.map(row))
+        .when(Boolean(note), (e) => e.child(div().px(12).py(16).text_size(12).text_color(this.error ? t.ansi1 : t.dim).child(note))))
+      .child(h_flex().h(30).flex_none().px(14).gap(14).items_center().border_t(1).border_color(t.border).text_size(11).text_color(t.dim)
+        .child("↵ new tab").child(`${mac() ? "⌘" : "ctrl "}↵ split beside`).child("↑↓ choose").child("esc close"));
+  }
+}
+
+// Front matter isn't part of what a reader sees.
+const body = (text) => text.replace(/^---\n[\s\S]*?\n---\n/, "");
+
+class Viewer {
+  constructor(file, on, cx) {
+    this.file = file; this.on = on; this.history = []; this.text = null; this.error = null;
+    this.source = localStorage.getItem("source") === "1"; this.editor = null; this.gen = 0;
+    this.load(cx);
+    this.listen(cx);
+    cx.timer.every(on ? 3000 : 15000, (cx) => this.reload(cx)); // a remote file can't be watched; a local one is, this is the backstop
+  }
+
+  // open.sh (the Markdown Router on macOS, while Herdr is in front) asks a viewer that's showing to
+  // take the file: it writes data/markdown-viewer/request.json and runs `markdown-viewer.show`.
+  // The one that takes it answers in data/markdown-viewer/ack; with no answer, open.sh splits a new one.
+  listen(cx) {
+    cx.spawn(async (cx) => {
+      for (;;) {
+        const c = await nextCommand();
+        if (c !== "show") continue;
+        try {
+          const folder = DATA();
+          const req = JSON.parse(await fs.readFile(`${folder}/request.json`, "utf8"));
+          if (!req?.file || req.id === this.answered) continue;
+          this.answered = req.id;
+          await fs.writeFile(`${folder}/ack`, req.id);
+          if (req.file !== this.file) { this.history.push(this.file); this.file = req.file; this.on = null; this.load(cx); }
+          cx.notify();
+        } catch {}
+      }
+    });
+  }
+
+  load(cx) {
+    const gen = ++this.gen, file = this.file;
+    this.text = null; this.error = null; this.editor?.release(); this.editor = null;
+    cx.spawn(async (cx) => {
+      try {
+        const text = await readTextFile(file, { on: this.on });
+        if (gen !== this.gen) return;
+        if (text === null) this.error = "This file isn't there (anymore).";
+        else this.set(text);
+      } catch (e) { if (gen === this.gen) this.error = String(e?.message ?? e); }
+      cx.notify();
+      if (!this.on && gen === this.gen) this.watch(gen, cx);
+    });
+  }
+
+  set(text) {
+    this.text = text;
+    if (this.editor) this.editor.set_value(text);
+    else if (this.source) this.editor = this.makeEditor(text);
+  }
+
+  makeEditor(value) {
+    const t = theme();
+    return EditorState.new({ language: "markdown", value, readonly: true, soft_wrap: true, folding: false,
+      font_family: settings().font_family, font_size: 13,
+      syntax: { keyword: t.ansi5, string: t.ansi2, comment: t.dim, function: t.ansi4, type: t.ansi3, number: t.ansi1, constant: t.ansi6, punctuation: t.muted } });
+  }
+
+  reload(cx) {
+    const gen = this.gen, file = this.file;
+    cx.spawn(async (cx) => {
+      const text = await readTextFile(file, { on: this.on }).catch(() => undefined);
+      if (gen !== this.gen || text === undefined || text === this.text) return;
+      if (text === null) this.error = "This file isn't there (anymore)."; else { this.error = null; this.set(text); }
+      cx.notify();
+    });
+  }
+
+  watch(gen, cx) {
+    const folder = dir(this.file);
+    cx.spawn(async (cx) => {
+      while (gen === this.gen) {
+        try { await watchFolder(folder); } catch { return; }
+        if (gen === this.gen) this.reload(cx);
+      }
+    });
+  }
+
+  // Links: another .md file opens here (Back returns); web links go to the browser;
+  // any other local file is only shown in its folder, never opened (a link could point at
+  // something that runs).
+  link(url, cx) {
+    if (/^(https?|mailto):/i.test(url)) { openLink(url); return; }
+    if (/^[a-z][\w+.-]*:/i.test(url) && !url.startsWith("file:")) return;
+    let path = url.replace(/^file:\/\//, "").split("#")[0];
+    try { path = decodeURIComponent(path); } catch {}
+    if (!path) return;
+    if (path.startsWith("~/")) path = home() + path.slice(1);
+    else if (!path.startsWith("/")) path = `${dir(this.file)}/${path}`;
+    path = path.split("/").reduce((acc, part) => part === ".." ? acc.slice(0, -1) : part === "." || part === "" ? acc : [...acc, part], []).join("/");
+    path = "/" + path;
+    if (/\.(md|markdown|mdx)$/i.test(path)) { this.history.push(this.file); this.file = path; this.load(cx); cx.notify(); }
+    else if (!this.on) reveal(path);
+  }
+
+  back(cx) {
+    const prev = this.history.pop();
+    if (prev) { this.file = prev; this.load(cx); cx.notify(); }
+  }
+
+  render(cx) {
+    const t = theme(), stop = (_e, cx) => cx.stop_propagation();
+    const button = (id, icon, title, on, action) => h_flex().id(id).h(26).px(8).gap(5).flex_none().items_center().rounded(6).text_size(12)
+      .bg(on ? t.selected : t.background).text_color(on ? t.foreground : t.muted).cursor_pointer()
+      .hover((s) => s.bg(t.hover).text_color(t.foreground)).on_mouse_down("left", stop).on_click(action)
+      .child(svg(ICON(icon)).size(14)).when(Boolean(title), (e) => e.child(title));
+    const content = this.error ? div().p(20).text_color(t.ansi1).child(this.error)
+      : this.text === null ? div().p(20).text_color(t.dim).child("Loading…")
+      : this.source
+        ? div().flex_1().min_h(0).p(6).child(Editor.new(this.editor ?? (this.editor = this.makeEditor(this.text))).size_full())
+        : div().id("md-scroll").flex_1().min_h(0).overflow_y_scrollbar()
+            .child(h_flex().w_full().justify_center()
+              .child(v_flex().flex_1().min_w(0).max_w(860).overflow_hidden().px(28).py(24).text_size(14)
+                .child(body(this.text).trim()
+                  ? TextView.markdown(`md-${this.gen}`, body(this.text)).selectable(true).on_link_click((url, cx) => this.link(url, cx))
+                  : div().text_color(t.dim).child("This file is empty."))));
+    return v_flex().id("md-viewer").size_full().min_h(0).bg(t.background).text_color(t.foreground)
+      .child(h_flex().h(40).flex_none().px(10).gap(6).items_center().border_b(1).border_color(t.border)
+        .when(this.history.length > 0, (e) => e.child(button("md-back", "back", "Back", false, (_e, cx) => this.back(cx))))
+        .child(svg(ICON("file")).size(14).flex_none().text_color(t.accent))
+        .child(div().flex_none().text_size(13).font_semibold().child(base(this.file)))
+        .child(div().flex_1().min_w(0).truncate().text_size(11).text_color(t.dim).child((this.on ? `${this.on}:` : "") + pretty(dir(this.file))))
+        .child(button("md-mode", this.source ? "eye" : "code", this.source ? "Preview" : "Source", false, (_e, cx) => {
+          this.source = !this.source;
+          try { localStorage.setItem("source", this.source ? "1" : "0"); } catch {}
+          cx.notify();
+        }))
+        .when(!this.on, (e) => e
+          .child(button("md-reveal", "folder", null, false, () => { reveal(this.file); }))
+          .child(button("md-external", "external", null, false, () => { openElsewhere(this.file); }))))
+      .child(content);
+  }
+}
