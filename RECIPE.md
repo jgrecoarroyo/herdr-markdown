@@ -33,7 +33,7 @@ When a coding agent mentions a Markdown file, cmd-click the path in the conversa
 
 ## Built from
 
-- **`mods/markdown-viewer`:** `main.js` (picker and viewer), `paths.js` (finding paths), `*.svg`, `mod.json`. `props: {file, on?}` makes a viewer; no `file` makes the picker.
+- **`mods/markdown-viewer`:** `main.js` (picker and viewer), `paths.js` (finding paths), `icons.js`, `mod.json`. `props: {file, on?}` makes a viewer; no `file` makes the picker.
 - **Opening the picker:** a key bound to `mod.open:markdown-viewer`.
 - **Opening a viewer:** `pane.split {direction: "right", pane, mod, props}` or `tab.new {mod, props, name}`.
 - **Herdr functions:** `focused`, `panes`, `hc`, `exec`, `run`, `theme`, `settings`, `props`, `closeOverlay`, `home`, `appHome`, `readTextFile`, `watchFolder`, `nextCommand`, `window`, plus `fs/promises` and `localStorage`.
@@ -44,6 +44,7 @@ When a coding agent mentions a Markdown file, cmd-click the path in the conversa
 ## Watch out
 
 - `TextView` draws no images and ignores `text_color`.
+- Herdr draws images only from real folders, so `svg("mods/...")` comes up blank when the mod's folder is a link to a git clone. `icons.js` writes the icons to `data/markdown-viewer/icons` and draws them from there.
 - `<mod>.<command>` reaches only shown copies, which is why `open.sh` needs the acknowledgement.
 - `window()` can be null, including during `herdr-app check`, so guard it in `render`.
 - The running Herdr app on macOS may report no bundle id, so `open.sh` matches its path or the name `herdr-app`.

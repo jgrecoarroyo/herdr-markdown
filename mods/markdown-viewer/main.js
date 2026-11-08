@@ -8,13 +8,13 @@
 // - As a pane (props: { file, on }): the file rendered, reloaded when it changes, with
 //   Source/Preview, links to other .md files followed in place (Back), web links in the
 //   browser.
-import { View, div, svg } from "gpui-kit";
+import { View, div } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, Editor, EditorState, TextView } from "gpui-base";
 import { focused, panes, hc, exec, run, theme, settings, props, closeOverlay, home, appHome, readTextFile, watchFolder, nextCommand, window } from "herdr";
 import * as fs from "fs/promises";
 import { mentions, existing } from "./paths.js";
+import { icon as drawIcon, writeIcons } from "./icons.js";
 
-const ICON = (name) => `mods/markdown-viewer/${name}.svg`;
 const DATA = () => `${appHome()}/data/markdown-viewer`;
 const mac = () => window()?.platform === "macos";
 const base = (p) => p.slice(p.lastIndexOf("/") + 1);
@@ -35,6 +35,7 @@ async function openElsewhere(file) {
 export default class Markdown extends View {
   init(_props, cx) {
     const p = props() ?? {};
+    cx.spawn(async (cx) => { await writeIcons().catch(() => null); cx.notify(); });
     if (p.file) this.viewer = new Viewer(p.file, p.on ?? null, cx);
     else this.picker = new Picker(p.overlay, cx);
   }
@@ -101,14 +102,14 @@ class Picker {
     const row = (f, i) => h_flex().id(`md-${i}`).h(44).px(12).gap(10).flex_none().items_center().rounded(7).cursor_pointer()
       .bg(i === this.at ? t.selected : t.popover).hover((s) => s.bg(i === this.at ? t.selected : t.hover))
       .on_click((e, cx) => this.choose(f, Boolean(e?.modifiers?.platform || e?.modifiers?.control), cx))
-      .child(svg(ICON("file")).size(16).flex_none().text_color(t.muted))
+      .child(drawIcon("file").size(16).flex_none().text_color(t.muted))
       .child(v_flex().flex_1().min_w(0)
         .child(div().text_size(13).font_semibold().truncate().child(base(f)))
         .child(div().text_size(11).text_color(t.dim).truncate().child(pretty(dir(f)))))
       .child(div().id(`md-split-${i}`).size(26).flex_none().flex().items_center().justify_center().rounded(6).text_color(t.dim)
         .hover((s) => s.bg(t.raised).text_color(t.foreground))
         .on_click((_e, cx) => { cx.stop_propagation(); this.choose(f, true, cx); })
-        .child(svg(ICON("split")).size(14)));
+        .child(drawIcon("split").size(14)));
     const note = this.error ?? (this.files === null ? "Reading the terminal…"
       : !this.files.length ? "No Markdown files in this terminal's recent output. Type a path."
       : !list.length ? "No match. Enter tries it as a path." : null);
@@ -122,7 +123,7 @@ class Picker {
         cx.stop_propagation(); cx.notify();
       })
       .child(h_flex().h(46).flex_none().px(14).gap(10).items_center().border_b(1).border_color(t.border)
-        .child(svg(ICON("file")).size(16).text_color(t.accent))
+        .child(drawIcon("file").size(16).text_color(t.accent))
         .child(div().flex_1().min_w(0).h_full().flex().items_center().child(Input.new(this.input).w_full().text_size(14).text_color(t.foreground))))
       .child(v_flex().id("md-list").h(330).flex_none().overflow_y_scrollbar().p(6).gap(1)
         .children(list.map(row))
@@ -240,7 +241,7 @@ class Viewer {
     const button = (id, icon, title, on, action) => h_flex().id(id).h(26).px(8).gap(5).flex_none().items_center().rounded(6).text_size(12)
       .bg(on ? t.selected : t.background).text_color(on ? t.foreground : t.muted).cursor_pointer()
       .hover((s) => s.bg(t.hover).text_color(t.foreground)).on_mouse_down("left", stop).on_click(action)
-      .child(svg(ICON(icon)).size(14)).when(Boolean(title), (e) => e.child(title));
+      .child(drawIcon(icon).size(14)).when(Boolean(title), (e) => e.child(title));
     const content = this.error ? div().p(20).text_color(t.ansi1).child(this.error)
       : this.text === null ? div().p(20).text_color(t.dim).child("Loading…")
       : this.source
@@ -254,7 +255,7 @@ class Viewer {
     return v_flex().id("md-viewer").size_full().min_h(0).bg(t.background).text_color(t.foreground)
       .child(h_flex().h(40).flex_none().px(10).gap(6).items_center().border_b(1).border_color(t.border)
         .when(this.history.length > 0, (e) => e.child(button("md-back", "back", "Back", false, (_e, cx) => this.back(cx))))
-        .child(svg(ICON("file")).size(14).flex_none().text_color(t.accent))
+        .child(drawIcon("file").size(14).flex_none().text_color(t.accent))
         .child(div().flex_none().text_size(13).font_semibold().child(base(this.file)))
         .child(div().flex_1().min_w(0).truncate().text_size(11).text_color(t.dim).child((this.on ? `${this.on}:` : "") + pretty(dir(this.file))))
         .child(button("md-mode", this.source ? "eye" : "code", this.source ? "Preview" : "Source", false, (_e, cx) => {
