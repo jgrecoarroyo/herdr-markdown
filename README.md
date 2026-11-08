@@ -8,7 +8,7 @@ rendered, right beside the conversation. No switching to another app or hunting 
 ## What you get
 
 - **Click a path (macOS):** cmd-click a `.md` path in the conversation to open it in a split on the right, or in the viewer already showing. Outside Herdr, `.md` files keep opening in your usual app.
-- **Viewer:** rendered Markdown that reloads as the agent edits the file, with a Source/Preview switch. Links to other `.md` files open in place, with Back. Web links open in your browser.
+- **Viewer:** rendered Markdown with images, reloading as the agent edits the file, with a Source/Preview switch. Links to other `.md` files open in place, with Back. Web links open in your browser.
 - **Picker:** a key lists the `.md` paths on the focused terminal's screen, newest first. Enter opens a tab, cmd-Enter (ctrl-Enter on Linux) opens a split. Type to filter, or type a path.
 - **Other machines:** the picker and viewer work with terminals on your other Herdr machines too.
 
@@ -47,7 +47,7 @@ In `~/.config/herdr-app/keys.json`, inside `"global"`. Use one of these, or any 
 ## Good to know
 
 - **Platforms:** tested on macOS. On Linux, clicking a path isn't supported yet, so use the picker; it should work but hasn't been tested. Windows isn't supported.
-- **Images:** Markdown images aren't drawn, because Herdr's text view doesn't draw them.
+- **Images:** local images show by themselves, as PNG, JPEG, GIF, WebP or SVG up to 20 MB. Web images wait for a click, so opening a file never contacts a server it mentions. Images in files on other machines aren't shown.
 - **Links:** a link to a non-Markdown file only shows it in its folder and never opens it, because it could point at something that runs.
 - **Picker reach:** it reads what the terminal can show. Claude Code exposes only its visible screen, so older paths may not be listed.
 

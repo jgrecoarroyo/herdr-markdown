@@ -8,12 +8,13 @@
 // - As a pane (props: { file, on }): the file rendered, reloaded when it changes, with
 //   Source/Preview, links to other .md files followed in place (Back), web links in the
 //   browser.
-import { View, div } from "gpui-kit";
+import { View, div, image } from "gpui-kit";
 import { v_flex, h_flex, InputState, Input, Editor, EditorState, TextView } from "gpui-base";
 import { focused, panes, hc, exec, run, theme, settings, props, closeOverlay, home, appHome, readTextFile, watchFolder, nextCommand, window } from "herdr";
 import * as fs from "fs/promises";
 import { mentions, existing } from "./paths.js";
 import { icon as drawIcon, writeIcons } from "./icons.js";
+import { blocks, loadLocal, loadWeb, pruneOld } from "./pictures.js";
 
 const DATA = () => `${appHome()}/data/markdown-viewer`;
 const mac = () => window()?.platform === "macos";
@@ -140,6 +141,8 @@ class Viewer {
   constructor(file, on, cx) {
     this.file = file; this.on = on; this.history = []; this.text = null; this.error = null;
     this.source = localStorage.getItem("source") === "1"; this.editor = null; this.gen = 0;
+    this.parts = []; this.pictures = {};
+    pruneOld();
     this.load(cx);
     this.listen(cx);
     cx.timer.every(on ? 3000 : 15000, (cx) => this.reload(cx)); // a remote file can't be watched; a local one is, this is the backstop
@@ -174,17 +177,70 @@ class Viewer {
         const text = await readTextFile(file, { on: this.on });
         if (gen !== this.gen) return;
         if (text === null) this.error = "This file isn't there (anymore).";
-        else this.set(text);
+        else this.set(text, cx);
       } catch (e) { if (gen === this.gen) this.error = String(e?.message ?? e); }
       cx.notify();
       if (!this.on && gen === this.gen) this.watch(gen, cx);
     });
   }
 
-  set(text) {
+  set(text, cx) {
     this.text = text;
+    this.parts = blocks(body(text), this.file);
+    this.checkPictures(cx);
     if (this.editor) this.editor.set_value(text);
     else if (this.source) this.editor = this.makeEditor(text);
+  }
+
+  // Local images load by themselves, and are checked again in case they changed. A file on another
+  // machine isn't here to copy from, so its images stay as a note.
+  checkPictures(cx) {
+    if (this.on || this.checking) return;
+    const gen = this.gen, local = this.parts.flatMap((p) => p.images ?? []).filter((i) => !i.web);
+    if (!local.length) return;
+    this.checking = true;
+    cx.spawn(async (cx) => {
+      try {
+        for (const { src } of local) {
+          const found = await loadLocal(src).catch(() => ({ state: "failed", why: "could not be read" }));
+          if (gen !== this.gen) return;
+          if (JSON.stringify(found) !== JSON.stringify(this.pictures[src])) { this.pictures[src] = found; cx.notify(); }
+        }
+      } finally { this.checking = false; }
+    });
+  }
+
+  // A web image downloads only here, after a click.
+  fetchWeb(url, cx) {
+    if (this.pictures[url]?.state === "loading") return;
+    this.pictures[url] = { state: "loading" };
+    cx.notify();
+    cx.spawn(async (cx) => {
+      this.pictures[url] = await loadWeb(url).catch(() => ({ state: "failed", why: "could not be downloaded" }));
+      cx.notify();
+    });
+  }
+
+  // As GitHub sizes one: its width attribute, else its own, never wider than the column.
+  picture(key, item, t) {
+    const found = this.pictures[item.src];
+    const room = Math.max(160, Math.min(860, this.width ?? 860) - 56);
+    if (found?.state === "ready") {
+      const w = Math.min(item.width ?? found.width, room), h = Math.max(1, Math.round(found.height * w / found.width));
+      return image(found.path).w(w).h(h).flex_none().rounded(6);
+    }
+    const host = item.web ? item.src.replace(/^https?:\/\//i, "").split("/")[0] : item.src.slice(item.src.lastIndexOf("/") + 1);
+    const label = item.alt || host;
+    const note = item.web
+      ? (found?.state === "loading" ? "Loading…" : found?.state === "failed" ? `${host}: ${found.why}. Click to retry` : item.alt ? `${host}: click to load` : "Click to load")
+      : this.on ? `On ${this.on}` : found?.state === "failed" ? `${host}: ${found.why}` : "Loading…";
+    return h_flex().id(key).h(30).px(10).gap(8).flex_none().min_w(0).items_center().rounded(6).border_1().border_color(t.border).bg(t.raised)
+      .text_size(12).text_color(t.muted).overflow_hidden().max_w(room)
+      .when(Boolean(item.web), (e) => e.cursor_pointer().hover((s) => s.bg(t.hover).text_color(t.foreground))
+        .on_click((_e, cx) => this.fetchWeb(item.src, cx)))
+      .child(drawIcon("image").size(14).flex_none())
+      .child(div().min_w(0).truncate().child(label))
+      .child(div().flex_none().text_color(t.dim).child(note));
   }
 
   makeEditor(value) {
@@ -198,8 +254,9 @@ class Viewer {
     const gen = this.gen, file = this.file;
     cx.spawn(async (cx) => {
       const text = await readTextFile(file, { on: this.on }).catch(() => undefined);
-      if (gen !== this.gen || text === undefined || text === this.text) return;
-      if (text === null) this.error = "This file isn't there (anymore)."; else { this.error = null; this.set(text); }
+      if (gen !== this.gen || text === undefined) return;
+      if (text === this.text) { this.checkPictures(cx); return; }
+      if (text === null) this.error = "This file isn't there (anymore)."; else { this.error = null; this.set(text, cx); }
       cx.notify();
     });
   }
@@ -249,10 +306,13 @@ class Viewer {
         : div().id("md-scroll").flex_1().min_h(0).overflow_y_scrollbar()
             .child(h_flex().w_full().justify_center()
               .child(v_flex().flex_1().min_w(0).max_w(860).overflow_hidden().px(28).py(24).text_size(14)
-                .child(body(this.text).trim()
-                  ? TextView.markdown(`md-${this.gen}`, body(this.text)).selectable(true).on_link_click((url, cx) => this.link(url, cx))
+                .child(this.parts.length
+                  ? v_flex().w_full().gap(12).children(this.parts.map((part, n) => part.images
+                    ? h_flex().w_full().flex_wrap().gap(8).items_center().children(part.images.map((item, i) => this.picture(`md-image-${this.gen}-${n}-${i}`, item, t)))
+                    : TextView.markdown(`md-${this.gen}-${n}`, part.text).selectable(true).on_link_click((url, cx) => this.link(url, cx))))
                   : div().text_color(t.dim).child("This file is empty."))));
     return v_flex().id("md-viewer").size_full().min_h(0).bg(t.background).text_color(t.foreground)
+      .on_size_change((size, cx) => { if (size.width !== this.width) { this.width = size.width; cx.notify(); } })
       .child(h_flex().h(40).flex_none().px(10).gap(6).items_center().border_b(1).border_color(t.border)
         .when(this.history.length > 0, (e) => e.child(button("md-back", "back", "Back", false, (_e, cx) => this.back(cx))))
         .child(drawIcon("file").size(14).flex_none().text_color(t.accent))
