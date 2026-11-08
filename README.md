@@ -48,9 +48,18 @@ In `~/.config/herdr-app/keys.json`, inside `"global"`. Use one of these, or any 
 
 - **Platforms:** tested on macOS. On Linux, clicking a path isn't supported yet, so use the picker; it should work but hasn't been tested. Windows isn't supported.
 - **Images:** local images show by themselves, as PNG, JPEG, GIF, WebP or SVG up to 20 MB. Web images wait for a click, so opening a file never contacts a server it mentions. Images in files on other machines aren't shown.
-- **Code highlighting:** JavaScript, Python, Java, C, C++, C#, Go, Rust, Ruby, PHP, Bash, SQL, YAML, JSON, HTML, CSS and Markdown. TypeScript uses JavaScript's colors. Other languages, such as Swift and TOML, show as plain text with their label. A code block can scroll a little past its last line, because each one is a small editor and Herdr has no setting to turn that off.
+- **Code highlighting:** JavaScript, Python, Java, C, C++, C#, Go, Rust, Ruby, PHP, Bash, SQL, YAML, JSON, HTML, CSS and Markdown. TypeScript uses JavaScript's colors. Other languages, such as Swift and TOML, show as plain text with their label.
 - **Links:** a link to a non-Markdown file only shows it in its folder and never opens it, because it could point at something that runs.
 - **Picker reach:** it reads what the terminal can show. Claude Code exposes only its visible screen, so older paths may not be listed.
+
+## Known issues
+
+- **Code blocks scroll past their last line.** Each block is a small editor, and Herdr has no setting to turn that off.
+- **The label and copy button can cover a long line** until you scroll it sideways.
+- **Code blocks inside lists keep Herdr's default look**, because drawing them separately would split the list.
+- **Images inside a link don't follow it** when clicked, as with most README badges.
+- **Reference-style images** (`![alt][ref]`) stay as text.
+- **Text can't be selected across an image**, because the text on each side is drawn separately.
 
 ## License
 
