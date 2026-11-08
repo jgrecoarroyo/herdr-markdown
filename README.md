@@ -3,7 +3,7 @@
 When your coding agent mentions a Markdown file, click the path in the conversation and read it
 rendered, right beside the conversation. No switching to another app or hunting for it in Finder.
 
-![A conversation with a coding agent on the left, and the Markdown file it mentioned rendered on the right](preview.png)
+![A conversation with a coding agent on the left, and the Markdown file it mentioned on the right, with an image and a highlighted code block](preview.png)
 
 ## What you get
 
@@ -64,3 +64,5 @@ In `~/.config/herdr-app/keys.json`, inside `"global"`. Use one of these, or any 
 ## License
 
 [MIT](LICENSE)
+
+Preview photo: NASA, [iss072e820937](https://images.nasa.gov/details/iss072e820937). NASA doesn't endorse this project.
